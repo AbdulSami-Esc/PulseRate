@@ -12,6 +12,7 @@
 #include "DispatchQueue.h"
 #include "RobotFleet.h"
 #include "Simulator.h"
+#include "WeightModel.h"
 
 class CLI {
 private:
@@ -21,6 +22,7 @@ private:
     DispatchQueue& queue;
     RobotFleet& fleet;
     Simulator& sim;
+    WeightModel& weights;
 
     DynamicArray<std::string> split(const std::string& line) const {
         DynamicArray<std::string> words;
@@ -79,7 +81,7 @@ private:
         std::cout << "\n";
     }
 
-    // dispatch <room> <STAT|URGENT|ROUTINE> <item>
+    // dispatch <room> <STAT|URGENT|ROUTINE> <item words...>
     void cmdDispatch(const DynamicArray<std::string>& w) {
         if (w.size() < 3) { std::cout << "Usage: dispatch <room> <STAT|URGENT|ROUTINE> <item>\n"; return; }
         int dest;
@@ -92,7 +94,13 @@ private:
         else if (level == "ROUTINE") priority = 3;
         else { std::cout << "Priority must be STAT, URGENT or ROUTINE\n"; return; }
 
-        std::string item = (w.size() > 3) ? w[3] : "Item";
+        std::string item;
+        for (int i = 3; i < w.size(); i++) {
+            if (i > 3) item += " ";
+            item += w[i];
+        }
+        if (item.empty()) item = "Item";
+
         int id = queue.submit(item, dest, priority);
         std::cout << "Request " << id << " queued (" << level << "): " << item << " -> " << w[1] << "\n";
     }
@@ -108,6 +116,7 @@ private:
             std::cout << "No corridor between " << w[1] << " and " << w[2] << "\n";
             return;
         }
+        weights.recordBlock(a, b);
         std::cout << "ALERT: " << w[1] << " - " << w[2] << " blocked. Affected robots: " << affected.size() << "\n";
         for (int i = 0; i < affected.size(); i++) {
             std::cout << "  re-routed: ";
@@ -168,6 +177,23 @@ private:
         std::cout << "\n";
     }
 
+    // risk: corridors the system has learned to distrust
+    void cmdRisk() const {
+        bool any = false;
+        for (int a = 0; a < graph.nodeCount(); a++) {
+            const DynamicArray<Edge>& edges = graph.neighbors(a);
+            for (int i = 0; i < edges.size(); i++) {
+                if (a < edges[i].to && edges[i].risk > 0.01) {
+                    std::cout << graph.getNode(a).name << " - " << graph.getNode(edges[i].to).name
+                              << ": risk " << edges[i].risk
+                              << ", weight " << edges[i].weight << "s (base " << edges[i].baseWeight << "s)\n";
+                    any = true;
+                }
+            }
+        }
+        if (!any) std::cout << "No risky corridors yet\n";
+    }
+
     void cmdHelp() const {
         std::cout << "dispatch <room> <STAT|URGENT|ROUTINE> <item>\n"
                   << "block <roomA> <roomB>\n"
@@ -175,6 +201,7 @@ private:
                   << "tick [n]\n"
                   << "status\n"
                   << "robots\n"
+                  << "risk\n"
                   << "find <prefix>\n"
                   << "help\n"
                   << "quit\n";
@@ -182,8 +209,8 @@ private:
 
 public:
     CLI(const Graph& g, const HashTable& n, const Trie& t,
-        DispatchQueue& q, RobotFleet& f, Simulator& s)
-        : graph(g), names(n), trie(t), queue(q), fleet(f), sim(s) {}
+        DispatchQueue& q, RobotFleet& f, Simulator& s, WeightModel& wm)
+        : graph(g), names(n), trie(t), queue(q), fleet(f), sim(s), weights(wm) {}
 
     // main loop: read a line, run the matching command
     void run() {
@@ -204,6 +231,7 @@ public:
             else if (cmd == "tick") cmdTick(w);
             else if (cmd == "status") cmdStatus();
             else if (cmd == "robots") cmdRobots();
+            else if (cmd == "risk") cmdRisk();
             else if (cmd == "find") cmdFind(w);
             else if (cmd == "help") cmdHelp();
             else std::cout << "Unknown command. Type 'help'.\n";

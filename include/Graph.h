@@ -17,6 +17,7 @@ struct Edge {
     int baseWeight;
     int weight;
     bool blocked;
+    double risk;
 };
 
 class Graph {
@@ -42,7 +43,7 @@ public:
             throw std::out_of_range("Node id out of range");
         }
         Edge e = {to, seconds, seconds, blocked};
-        adj[from].push_back(e);
+        adj[from].push_back(Edge{to, seconds, seconds, blocked, 0.0});
         numEdges++;
     }
 

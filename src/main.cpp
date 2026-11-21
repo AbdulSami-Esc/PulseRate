@@ -5,6 +5,7 @@
 #include "../include/RobotFleet.h"
 #include "../include/DispatchQueue.h"
 #include "../include/Dispatcher.h"
+#include "../include/WeightModel.h"
 #include "../include/Simulator.h"
 #include "../include/CLI.h"
 
@@ -12,7 +13,6 @@
 const std::string DATA_DIR = "D:/PulseRate/data";
 
 int main(int argc, char* argv[]) {
-    // optional: .\pulseroute <other_folder> overrides the default
     std::string dir = (argc > 1) ? argv[1] : DATA_DIR;
 
     Graph graph;
@@ -40,9 +40,10 @@ int main(int argc, char* argv[]) {
 
     DispatchQueue queue;
     Dispatcher dispatcher(queue, fleet);
-    Simulator sim(queue, dispatcher, fleet);
+    WeightModel weights(graph, fleet.reverseIndex());
+    Simulator sim(queue, dispatcher, fleet, weights);
 
-    CLI cli(graph, names, trie, queue, fleet, sim);
+    CLI cli(graph, names, trie, queue, fleet, sim, weights);
     cli.run();
     return 0;
 }
