@@ -39,9 +39,6 @@ int main(int argc, char* argv[]) {
     fleet.addRobot(start);
 
     DispatchQueue queue;
-    Dispatcher dispatcher(queue, fleet);
-    WeightModel weights(graph, fleet.reverseIndex());
-    Simulator sim(queue, dispatcher, fleet, weights);
 
     CLI cli(graph, names, trie, queue, fleet, sim, weights);
     cli.run();

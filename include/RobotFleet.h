@@ -67,6 +67,7 @@ public:
         r.route = res.path;
         r.position = 0;
         r.destination = destination;
+        r.returning = false;
         r.status = (r.route.size() > 1) ? RobotStatus::MOVING : RobotStatus::IDLE;
         index.addRoute(r.route, 0, id);
         return true;
@@ -112,6 +113,15 @@ public:
     const Robot& getRobot(int id) const { checkId(id); return robots[id]; }
     int robotCount() const { return robots.size(); }
     const ReverseIndex& reverseIndex() const { return index; }
+
+    bool sendHome(int id, int home) {
+        checkId(id);
+        Robot& r = robots[id];
+        if (r.status != RobotStatus::IDLE || r.currentNode() == home) return false;
+        if (!assign(id, home)) return false;
+        robots[id].returning = true;
+        return true;
+    }
 };
 
 #endif

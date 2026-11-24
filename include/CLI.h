@@ -69,7 +69,7 @@ private:
     // "R0 [MOVING] Junction_A -> Lab -> ICU_Room_4"
     void printRobot(int id) const {
         const Robot& r = fleet.getRobot(id);
-        std::cout << "R" << id << " [" << statusName(r.status) << "] ";
+        std::cout << "R" << id << " ["<< (r.returning && r.status == RobotStatus::MOVING ? "RETURNING" : statusName(r.status))<< "] ";
         if (r.status == RobotStatus::STUCK) {
             std::cout << "waiting at " << graph.getNode(r.currentNode()).name << "\n";
             return;

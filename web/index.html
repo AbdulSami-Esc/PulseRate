@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PulseRoute Viewer</title>
 <style>
-:root{--bg:#fafafa;--fg:#1a1a1a;--mut:#777;--line:#bbb;--card:#fff;--bd:#ddd;--ok:#2a7;--bad:#d33;--warn:#e8a317;--rob:#2563eb}
-@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#999;--line:#555;--card:#1f1f1f;--bd:#333;--ok:#4c9;--bad:#f55;--warn:#f0b840;--rob:#6ea0ff}}
+:root{--bg:#fafafa;--fg:#1a1a1a;--mut:#777;--line:#bbb;--card:#fff;--bd:#ddd;--ok:#2a7;--bad:#d33;--warn:#e8a317;--rob:#2563eb;--ret:#7c3aed}
+@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#999;--line:#555;--card:#1f1f1f;--bd:#333;--ok:#4c9;--bad:#f55;--warn:#f0b840;--rob:#6ea0ff;--ret:#b794f6}}
 *{box-sizing:border-box}
 body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{padding:10px 16px;border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
@@ -22,7 +22,7 @@ svg{width:100%;height:auto;display:block}
 .lbl{font-size:11px;fill:var(--fg);text-anchor:middle}
 .wt{font-size:10px;fill:var(--mut);text-anchor:middle}
 .rob{fill:var(--rob);stroke:var(--card);stroke-width:2}
-.rob.STUCK{fill:var(--bad)}.rob.IDLE{fill:var(--mut)}
+.rob.STUCK{fill:var(--bad)}.rob.IDLE{fill:var(--mut)}.rob.RETURNING{fill:var(--ret)}
 .rt{font-size:9px;fill:#fff;text-anchor:middle;font-weight:600;pointer-events:none}
 .fl{font-size:11px;fill:var(--mut)}
 .bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
@@ -47,7 +47,7 @@ h3{font-size:12px;text-transform:uppercase;color:var(--mut);margin:10px 0 4px;le
       <button id="bReset">Reset</button>
     </div>
     <svg id="map" viewBox="0 0 600 380"></svg>
-    <div class="hint">Blue dot = moving robot, grey = idle, red = stuck. Red dashed corridor = blocked. Orange corridor = risk learned. Number on a corridor = live cost in seconds.</div>
+    <div class="hint">Blue = delivering, purple = returning to the Pharmacy, grey = idle, red = stuck. Red dashed corridor = blocked. Orange corridor = risk learned. Number on a corridor = live cost in seconds.</div>
   </div>
   <div class="card">
     <input id="cmd" placeholder="type a command, e.g. help" autocomplete="off">
@@ -63,6 +63,7 @@ const N = [["Pharmacy",1,60,110],["Junction_A",1,210,110],["Junction_B",1,360,11
            ["ICU_Room_4",1,520,110],["Elevator_1F",1,210,230],["Elevator_2F",2,210,330],["Ward_201",2,420,330]];
 const E = [[0,1,10],[1,2,15],[1,3,20],[2,4,12],[3,4,25],[1,5,8],[5,6,30],[6,7,10]];
 const ROBOTS = 3, AGING = 10, CONGEST = 5, RISKSCALE = 20, ALPHA = 0.2, DECAY = 0.98, INF = 1e9;
+const HOME = 0;   // the Pharmacy: robots start here, wait here, and return here
 
 let adj, robots, queue, idx, tickN, reqN;
 
@@ -75,8 +76,8 @@ function init() {
   });
   idx = new Map(); queue = []; tickN = 0; reqN = 0;
   robots = [];
-  for (let i = 0; i < ROBOTS; i++) robots.push({id: i, route: [0], pos: 0, dest: 0, status: "IDLE", x: 0, y: 0, tx: 0, ty: 0});
-  robots.forEach(r => { snap(r, true); });
+  for (let i = 0; i < ROBOTS; i++) robots.push({id: i, route: [HOME], pos: 0, dest: HOME, status: "IDLE", returning: false, x: 0, y: 0, tx: 0, ty: 0});
+  robots.forEach(r => snap(r, true));
 }
 const key = (a, b) => a < b ? a + "-" + b : b + "-" + a;
 const cur = r => r.route[r.pos];
@@ -123,11 +124,12 @@ function assign(r, dest) {
   if (!res.found) return false;
   idxDel(r.route, r.pos, r.id);
   r.route = res.path; r.pos = 0; r.dest = dest;
+  r.returning = false;
   r.status = r.route.length > 1 ? "MOVING" : "IDLE";
   idxAdd(r.route, 0, r.id);
   return true;
 }
-// local reroute: from the robot's CURRENT node
+// local reroute: from the robot's CURRENT node (works for deliveries and for the way home)
 function reroute(r) {
   const c = cur(r);
   idxDel(r.route, r.pos, r.id);
@@ -167,9 +169,17 @@ function weightsTick() {
     e.w = e.base + CONGEST * usersOf(u, e.to).length + Math.floor(e.risk * RISKSCALE);
   }));
 }
+
+// idle robots that are away from the Pharmacy drive back to it
+function sendHome() {
+  robots.forEach(r => {
+    if (r.status === "IDLE" && cur(r) !== HOME && assign(r, HOME)) r.returning = true;
+  });
+}
+// only an idle robot standing at the Pharmacy can take a request
 function dispatchStep() {
   robots.forEach(r => {
-    if (r.status !== "IDLE" || !queue.length) return;
+    if (r.status !== "IDLE" || cur(r) !== HOME || !queue.length) return;
     queue.sort((p, q) => (p.pri * 100000 + p.arr) - (q.pri * 100000 + q.arr));
     const q = queue.shift();
     if (assign(r, q.dest)) log("R" + r.id + " takes request " + q.id + " (" + q.item + ") -> " + N[q.dest][0], "g");
@@ -179,6 +189,7 @@ function dispatchStep() {
 function tick() {
   weightsTick();
   queue.forEach(q => { q.wait++; if (q.wait >= AGING && q.pri > 1) { q.pri--; q.wait = 0; } });
+  sendHome();
   dispatchStep();
   robots.forEach(advance);
   tickN++;
@@ -196,8 +207,11 @@ function room(s) {
 }
 function routeText(r) {
   if (r.status === "STUCK") return "waiting at " + N[cur(r)][0];
-  return r.route.slice(r.pos).map(i => N[i][0]).join(" -> ");
+  const path = r.route.slice(r.pos).map(i => N[i][0]).join(" -> ");
+  return (r.returning && r.status === "MOVING" ? "returning: " : "") + path;
 }
+const stateOf = r => (r.returning && r.status === "MOVING") ? "RETURNING" : r.status;
+
 function run(line) {
   const w = line.trim().split(/\s+/).filter(Boolean);
   if (!w.length) return;
@@ -212,6 +226,7 @@ function run(line) {
     const item = w.slice(3).join(" ") || "Item";
     queue.push({id: reqN, item, dest: d, pri, arr: reqN, wait: 0});
     log("Request " + reqN++ + " queued (" + w[2].toUpperCase() + "): " + item + " -> " + w[1]);
+    dispatchStep();   // a robot already waiting at the Pharmacy takes it straight away
   } else if (c === "block" || c === "unblock") {
     if (w.length < 3) return log("Usage: " + c + " <roomA> <roomB>", "e");
     const a = room(w[1]), b = room(w[2]); if (a < 0 || b < 0) return;
@@ -227,9 +242,9 @@ function run(line) {
     for (let i = 0; i < n; i++) tick();
     log("[tick " + tickN + "] " + robots.map(r => "R" + r.id + "@" + N[cur(r)][0]).join("  "));
   } else if (c === "status") {
-    const k = s => robots.filter(r => r.status === s).length;
-    log("Tick " + tickN + " | waiting: " + queue.length + " | idle " + k("IDLE") + ", moving " + k("MOVING") + ", stuck " + k("STUCK"));
-  } else if (c === "robots") robots.forEach(r => log("R" + r.id + " [" + r.status + "] " + routeText(r)));
+    const k = s => robots.filter(r => stateOf(r) === s).length;
+    log("Tick " + tickN + " | waiting: " + queue.length + " | idle " + k("IDLE") + ", delivering " + k("MOVING") + ", returning " + k("RETURNING") + ", stuck " + k("STUCK"));
+  } else if (c === "robots") robots.forEach(r => log("R" + r.id + " [" + stateOf(r) + "] " + routeText(r)));
   else if (c === "risk") {
     let any = false;
     adj.forEach((l, a) => l.forEach(e => { if (a < e.to && e.risk > 0.01) { any = true; log(N[a][0] + " - " + N[e.to][0] + ": risk " + e.risk.toFixed(3) + ", weight " + e.w + "s (base " + e.base + "s)"); } }));
@@ -243,7 +258,8 @@ function run(line) {
   render();
 }
 function demo() {
-  ["dispatch ICU_Room_4 STAT Blood_sample", "dispatch Ward_201 ROUTINE Cleaning", "tick 2", "block Junction_B ICU_Room_4", "tick 1", "risk"].forEach(run);
+  ["dispatch Lab ROUTINE Medicine", "dispatch Ward_201 ROUTINE Supplies", "dispatch ICU_Room_4 STAT Blood_sample",
+   "dispatch Lab URGENT Samples", "tick 2", "block Junction_B ICU_Room_4", "tick 1", "robots"].forEach(run);
 }
 
 // ---------- drawing ----------
@@ -286,9 +302,9 @@ function render() {
     ln.style.strokeWidth = 3 + Math.min(users, 4);
     t.textContent = e.blocked ? "blocked" : e.w + "s";
   });
-  robEls.forEach((o, i) => o.c.setAttribute("class", "rob " + robots[i].status));
+  robEls.forEach((o, i) => o.c.setAttribute("class", "rob " + stateOf(robots[i])));
   $info.innerHTML = "tick " + tickN + " | waiting requests: " + queue.length + "<br>" +
-    robots.map(r => "R" + r.id + " [" + r.status + "] " + routeText(r)).join("<br>") +
+    robots.map(r => "R" + r.id + " [" + stateOf(r) + "] " + routeText(r)).join("<br>") +
     (queue.length ? "<br>queue: " + queue.map(q => q.item + "(p" + q.pri + ")").join(", ") : "");
 }
 function log(msg, cls) {

@@ -11,17 +11,20 @@ private:
     DispatchQueue& queue;
     Dispatcher& dispatcher;
     RobotFleet& fleet;
+    WeightModel& weights;
+    int home;
     int currentTick;
     int agingLimit;
-    WeightModel& weights;
-public:
-    Simulator(DispatchQueue& q, Dispatcher& d, RobotFleet& f,WeightModel& w)
-        : queue(q), dispatcher(d), fleet(f),weights(w), currentTick(0), agingLimit(10) {}
 
-    // one step of time: age requests, dispatch, move robots
+public:
+    Simulator(DispatchQueue& q, Dispatcher& d, RobotFleet& f, WeightModel& w, int homeNode)
+        : queue(q), dispatcher(d), fleet(f), weights(w), home(homeNode), currentTick(0), agingLimit(10) {}
+
+    // one step of time: weights, aging, robots go home, dispatch, move
     void tick() {
         weights.tick();
         queue.ageAll(agingLimit);
+        for (int i = 0; i < fleet.robotCount(); i++) fleet.sendHome(i, home);
         dispatcher.update();
         for (int i = 0; i < fleet.robotCount(); i++) fleet.advance(i);
         currentTick++;

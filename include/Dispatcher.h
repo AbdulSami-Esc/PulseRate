@@ -4,28 +4,25 @@
 #include "DispatchQueue.h"
 #include "RobotFleet.h"
 
-// Matches waiting requests to idle robots.
+// Gives waiting requests to idle robots that are standing at the home node (Pharmacy).
 class Dispatcher {
 private:
     DispatchQueue& queue;
     RobotFleet& fleet;
+    int home;
 
 public:
-    Dispatcher(DispatchQueue& q, RobotFleet& f) : queue(q), fleet(f) {}
+    Dispatcher(DispatchQueue& q, RobotFleet& f, int homeNode) : queue(q), fleet(f), home(homeNode) {}
 
-    // Give the most urgent requests to idle robots.
     // Returns how many requests were handed out this call.
     int update() {
         int handed = 0;
         for (int i = 0; i < fleet.robotCount() && !queue.empty(); i++) {
-            if (fleet.getRobot(i).status != RobotStatus::IDLE) continue;
+            const Robot& r = fleet.getRobot(i);
+            if (r.status != RobotStatus::IDLE || r.currentNode() != home) continue;
 
             Request req = queue.next();
-            if (fleet.assign(i, req.destination)) {
-                handed++;
-            }
-            // if assign fails (room unreachable) the request is dropped here;
-            // you can decide later to re-submit it instead.
+            if (fleet.assign(i, req.destination)) handed++;
         }
         return handed;
     }

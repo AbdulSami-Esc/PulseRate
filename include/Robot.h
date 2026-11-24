@@ -12,8 +12,9 @@ public:
     int position;              // current index position of robot
     int destination;           // final node
     RobotStatus status;
+    bool returning;
 
-    Robot() : id(-1), position(0), destination(-1), status(RobotStatus::IDLE) {}
+    Robot() : id(-1), position(0), destination(-1), status(RobotStatus::IDLE),returning(false) {}
 
     // the node the robot is standing on
     int currentNode() const { return route[position]; }
